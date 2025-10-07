@@ -1,89 +1,72 @@
-'use server';
+// src/ai/flows/extract-text-from-file.ts
+import pdf from "pdf-parse";
+import * as mammoth from "mammoth";
 
-/**
- * @fileOverview This file defines a Genkit flow for extracting text from PDF and DOCX files.
- *
- * The flow:
- * - Accepts a file buffer and MIME type.
- * - Validates file size and type.
- * - Extracts text content using appropriate parsers.
- * - Returns the extracted text.
- *
- * @exports extractTextFromFile - The main function to extract text.
- * @exports ExtractTextFromFileInput - The input type for the extractTextFromFile function.
- * @exports ExtractTextFromFileOutput - The return type for the extractTextFromFile function.
- */
-
-import { ai } from '@/ai/genkit';
-import { z } from 'genkit';
-import mammoth from 'mammoth';
-import pdf from 'pdf-parse/lib/pdf-parse.js';
-
-const MAX_FILE_SIZE_MB = 5;
-const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
-
-const ExtractTextFromFileInputSchema = z.object({
-  fileAsDataUrl: z.string().describe("The file encoded as a data URL."),
-});
-export type ExtractTextFromFileInput = z.infer<
-  typeof ExtractTextFromFileInputSchema
->;
-
-const ExtractTextFromFileOutputSchema = z.object({
-  text: z.string().optional(),
-  error: z.string().optional(),
-});
-export type ExtractTextFromFileOutput = z.infer<
-  typeof ExtractTextFromFileOutputSchema
->;
-
-export async function extractTextFromFile(
-  input: ExtractTextFromFileInput
-): Promise<ExtractTextFromFileOutput> {
-  return extractTextFromFileFlow(input);
+export interface ExtractResult {
+  text?: string;
+  error?: string;
 }
 
-const extractTextFromFileFlow = ai.defineFlow(
-  {
-    name: 'extractTextFromFileFlow',
-    inputSchema: ExtractTextFromFileInputSchema,
-    outputSchema: ExtractTextFromFileOutputSchema,
-  },
-  async ({ fileAsDataUrl }) => {
-    try {
-      const [meta, data] = fileAsDataUrl.split(',');
-      const mimeType = meta.split(';')[0].split(':')[1];
-      const buffer = Buffer.from(data, 'base64');
-      
-      if (buffer.length > MAX_FILE_SIZE_BYTES) {
-        return { error: `El archivo es demasiado grande. El tamaño máximo es de ${MAX_FILE_SIZE_MB} MB.` };
-      }
+/**
+ * Extrae texto desde:
+ *  - un File (forma en que llega desde req.formData() en Next),
+ *  - un Buffer,
+ *  - o un dataURL (opcional).
+ */
+export async function extractTextFromFile(input: File | Buffer | { fileAsDataUrl: string }): Promise<ExtractResult> {
+  try {
+    let buffer: Buffer;
+    let mimeType = "";
 
-      let text = '';
-      if (mimeType === 'application/pdf') {
-        const pdfData = await pdf(buffer);
-        if (pdfData.numpages > 50) {
-            return { error: 'El PDF tiene demasiadas páginas. El límite es de 50 páginas.' };
-        }
-        text = pdfData.text;
-      } else if (
-        mimeType ===
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-      ) {
-        const docxResult = await mammoth.extractRawText({ buffer });
-        text = docxResult.value;
-      } else {
-        return { error: 'Tipo de archivo no válido. Sube un PDF o DOCX.' };
-      }
-
-      if (!text) {
-        return { error: 'No se pudo extraer texto del documento. Asegúrate de que el archivo no esté vacío o protegido.' };
-      }
-
-      return { text };
-    } catch (e: any) {
-      console.error('[extractTextFromFileFlow]', e);
-      return { error: 'Hubo un error al procesar tu archivo. Asegúrate de que sea un PDF o DOCX válido.' };
+    // Caso 1: llega un File (formData en el server)
+    if (typeof (input as any).arrayBuffer === "function") {
+      const file = input as File;
+      const ab = await file.arrayBuffer();
+      buffer = Buffer.from(ab);
+      mimeType = file.type || "";
     }
+    // Caso 2: Buffer directo
+    else if (Buffer.isBuffer(input as Buffer)) {
+      buffer = input as Buffer;
+      mimeType = "";
+    }
+    // Caso 3: dataURL { fileAsDataUrl: "data:...;base64,..." }
+    else if ((input as any).fileAsDataUrl) {
+      const dataUrl = (input as any).fileAsDataUrl as string;
+      const parts = dataUrl.split(",");
+      const meta = parts[0] || "";
+      const b64 = parts[1] || "";
+      mimeType = (meta.match(/data:(.*?);base64/) || [])[1] || "";
+      buffer = Buffer.from(b64, "base64");
+    } else {
+      return { error: "Entrada inválida para extractTextFromFile." };
+    }
+
+    const low = (mimeType || "").toLowerCase();
+
+    // PDF
+    if (low.includes("pdf") || low === "" && buffer.slice(0, 4).toString() === "%PDF") {
+      const data = await pdf(buffer);
+      return { text: data.text || "" };
+    }
+
+    // DOCX (Office Open XML)
+    if (low.includes("officedocument") || low.includes("wordprocessingml") || low.includes("docx")) {
+      const result = await mammoth.extractRawText({ buffer });
+      return { text: result.value || "" };
+    }
+
+    // fallback: intentar mammoth por si buffer corresponde a docx aunque mime no lo diga
+    try {
+      const tryM = await mammoth.extractRawText({ buffer });
+      if (tryM && tryM.value && tryM.value.trim().length > 0) {
+        return { text: tryM.value };
+      }
+    } catch (_) { /* ignore */ }
+
+    return { error: "Formato no soportado. Usa PDF o DOCX." };
+  } catch (err: any) {
+    console.error("extractTextFromFile error:", err);
+    return { error: "Error al extraer texto del archivo." };
   }
-);
+}
