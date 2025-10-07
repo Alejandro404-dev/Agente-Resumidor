@@ -11,14 +11,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'No se subió ningún archivo.' }, { status: 400 });
     }
 
-    // Extrae texto del archivo (PDF o DOCX)
     const { text, error } = await extractTextFromFile(file);
     if (error) {
       return NextResponse.json({ error }, { status: 400 });
     }
 
-    // Genera el resumen
-    const summaryText = await generateDocumentSummary({ documentText: text || '' });
+    if (!text?.trim()) {
+      return NextResponse.json(
+        { error: 'No se pudo extraer texto del archivo. Puede que esté vacío o sea una imagen.' },
+        { status: 400 }
+      );
+    }
+
+    const summaryText = await generateDocumentSummary({ documentText: text });
 
     return NextResponse.json({
       summaryTitle: file.name,

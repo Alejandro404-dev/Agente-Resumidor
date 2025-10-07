@@ -9,8 +9,7 @@ const SUMMARY_OPTIONS = [
 ];
 
 export default function FileUploader() {
-  const [fileName, setFileName] = useState("");
-  const [fileAsDataUrl, setFileAsDataUrl] = useState<string | null>(null);
+  const [file, setFile] = useState<File | null>(null);
   const [summaryType, setSummaryType] = useState("medium");
   const [customLength, setCustomLength] = useState("");
   const [loading, setLoading] = useState(false);
@@ -19,36 +18,33 @@ export default function FileUploader() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
-    setFileName(f.name);
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      setFileAsDataUrl(dataUrl);
-    };
-    reader.readAsDataURL(f);
+    setFile(f);
   };
 
   const handleSubmit = async () => {
-    if (!fileAsDataUrl) {
+    if (!file) {
       alert("Selecciona un archivo PDF o DOCX primero.");
       return;
     }
     setLoading(true);
     try {
-      const res = await fetch("/api/process", {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("summaryType", summaryType);
+      if (summaryType === "custom") {
+        formData.append("customLength", customLength);
+      }
+
+      const res = await fetch("/api/summarize", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fileAsDataUrl,
-          summaryType,
-          customLength: summaryType === "custom" ? customLength : undefined,
-        }),
+        body: formData,
       });
+
       const data = await res.json();
       if (!data || data.error) {
         alert(data.error || "Error al procesar");
       } else {
-        setResult(data.summary);
+        setResult(data);
       }
     } catch (e) {
       alert("Error de red o servidor");
@@ -63,7 +59,7 @@ export default function FileUploader() {
       <h2 className="text-xl font-semibold mb-3">Subir documento (.pdf/.docx)</h2>
 
       <input type="file" accept=".pdf,.docx" onChange={handleFileChange} />
-      {fileName && <p className="mt-2">📄 {fileName}</p>}
+      {file && <p className="mt-2">📄 {file.name}</p>}
 
       <div className="mt-4">
         <label className="block font-medium">Tipo de resumen</label>
@@ -105,7 +101,6 @@ export default function FileUploader() {
         <div className="mt-6 p-4 border rounded">
           <h3 className="font-bold">{result.summaryTitle}</h3>
           <p className="whitespace-pre-wrap mt-2">{result.summaryText}</p>
-          <p className="mt-2 text-sm text-gray-600">Método: {result.summaryType}</p>
         </div>
       )}
     </div>

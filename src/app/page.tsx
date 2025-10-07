@@ -1,7 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { Loader2, FileText, Upload, Send, Trash2 } from 'lucide-react';
+import Head from 'next/head';
+import UploadForm from '@/components/UploadForm';
+import SummaryDisplay from '@/components/SummaryDisplay';
 
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
@@ -60,6 +62,10 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 flex flex-col items-center justify-center text-white px-4 py-10">
+      <Head>
+        <title>Agente Resumidor de Documentos</title>
+      </Head>
+
       <div className="w-full max-w-2xl bg-gray-800/80 rounded-2xl shadow-lg border border-gray-700 p-8">
         <h1 className="text-3xl font-bold mb-6 text-center">
           🧠 Agente Resumidor de Documentos
@@ -69,60 +75,16 @@ export default function Home() {
           Sube un documento en formato PDF o Word, y el agente generará un resumen automático en español.
         </p>
 
-        <div className="flex flex-col items-center gap-4">
-          <label
-            htmlFor="file-upload"
-            className="cursor-pointer bg-gray-700 hover:bg-gray-600 transition-all flex items-center gap-2 px-4 py-2 rounded-lg"
-          >
-            <Upload size={20} />
-            {file ? file.name : 'Seleccionar archivo'}
-          </label>
-          <input
-            id="file-upload"
-            type="file"
-            accept=".pdf, .docx"
-            onChange={handleFileChange}
-            className="hidden"
-          />
+        <UploadForm
+          onFileChange={handleFileChange}
+          onSubmit={handleSubmit}
+          onReset={resetForm}
+          fileName={file?.name || null}
+          loading={loading}
+          error={error}
+        />
 
-          <div className="flex gap-3 mt-4">
-            <button
-              onClick={handleSubmit}
-              disabled={loading}
-              className="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded-lg flex items-center gap-2 disabled:opacity-50"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="animate-spin" size={18} /> Generando...
-                </>
-              ) : (
-                <>
-                  <Send size={18} /> Generar resumen
-                </>
-              )}
-            </button>
-
-            <button
-              onClick={resetForm}
-              className="bg-red-600 hover:bg-red-500 px-4 py-2 rounded-lg flex items-center gap-2"
-            >
-              <Trash2 size={18} /> Limpiar
-            </button>
-          </div>
-
-          {error && <p className="text-red-400 mt-4">{error}</p>}
-        </div>
-
-        {summary && (
-          <div className="mt-8 bg-gray-900/60 rounded-xl p-6 border border-gray-700">
-            <h2 className="text-2xl font-semibold mb-2 text-blue-400">
-              {summaryTitle || 'Resumen generado'}
-            </h2>
-            <p className="text-gray-200 leading-relaxed whitespace-pre-line">
-              {summary}
-            </p>
-          </div>
-        )}
+        <SummaryDisplay title={summaryTitle} summary={summary} />
       </div>
 
       <footer className="mt-10 text-sm text-gray-500">
